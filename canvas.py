@@ -35,9 +35,17 @@ class WaveformCanvas:
 		self.figure.clear()
 		ax = self.figure.add_subplot(111)
 		ax.plot(wave_time, wave_int16, linewidth=0.8)
-		ax.set_title(
-			f"{wave_type.capitalize()} Wave – {freq} Hz ({sample_rate/1000:.1f} kHz, 16-bit)"
-		)
+		
+		# Handle special case for melodies (freq=0 or wave_type contains "Melody")
+		if freq == 0 or "Melody" in wave_type or "Birthday" in wave_type:
+			ax.set_title(
+				f"{wave_type} ({sample_rate/1000:.1f} kHz, 16-bit)"
+			)
+		else:
+			ax.set_title(
+				f"{wave_type.capitalize()} Wave – {freq} Hz ({sample_rate/1000:.1f} kHz, 16-bit)"
+			)
+		
 		ax.set_xlabel("Time (s)")
 		ax.set_ylabel("Amplitude (16-bit integer)")
 		ax.grid(True)
