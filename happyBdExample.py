@@ -34,6 +34,7 @@ def generate_happy_birthday(sample_rate=44100, wave_type="sine", amplitude=0.5):
 	all_times = []
 	note_info_list = []
 	current_time = 0.0
+	current_sample = 0
 	
 	for note, beats in HAPPY_BIRTHDAY_MELODY:
 		freq = NOTE_FREQUENCIES[note]
@@ -41,28 +42,23 @@ def generate_happy_birthday(sample_rate=44100, wave_type="sine", amplitude=0.5):
 		
 		t, wave = generate_tone(wave_type, freq, duration, amplitude, sample_rate)
 		
-		t_adjusted = t + current_time
-		
-		note_info = {
+		note_info_list.append({
 			'note': note,
 			'frequency': freq,
 			'duration': duration,
 			'start_time': current_time,
 			'end_time': current_time + duration,
-			'start_sample': len(np.concatenate(all_waves)) if all_waves else 0,
-			'end_sample': len(np.concatenate(all_waves + [wave])) if all_waves else len(wave),
-		}
-		note_info_list.append(note_info)
+			'start_sample': current_sample,
+			'end_sample': current_sample + len(wave),
+		})
 		
-		all_times.append(t_adjusted)
+		all_times.append(t + current_time)
 		all_waves.append(wave)
 		
 		current_time += duration
+		current_sample += len(wave)
 	
-	combined_time = np.concatenate(all_times)
-	combined_wave = np.concatenate(all_waves)
-	
-	return combined_time, combined_wave, note_info_list
+	return np.concatenate(all_times), np.concatenate(all_waves), note_info_list
 
 
 def get_note_at_time(note_info_list, current_time):
@@ -73,17 +69,12 @@ def get_note_at_time(note_info_list, current_time):
 
 
 def get_melody_info():
-	beat_duration = 0.5
-	melody_length = (
-		2.0 + 2.0 +  # First line
-		2.0 + 2.0 +  # Second line  
-		3.0 + 2.0 +  # Third line
-		2.0 + 2.0    # Fourth line
-	) * beat_duration * 2
+	total_beats = sum(beats for _, beats in HAPPY_BIRTHDAY_MELODY)
+	melody_length = total_beats * BEAT_DURATION
 	
 	return {
 		'name': 'Happy Birthday',
 		'duration': melody_length,
-		'note_count': 28,
+		'note_count': len(HAPPY_BIRTHDAY_MELODY),
 		'tempo': '120 BPM (moderate)',
 	}

@@ -106,22 +106,33 @@ class ToneGenerator(QWidget):
 		self._pause_requested = False
 		self._stop_requested = False
 
+	def _reset_playback_state(self, wave_time=None, wave_data=None, wave_int16=None, 
+	                          note_info_list=None, reset_pos=True):
+		"""Reset playback state with optional new waveform data."""
+		with self._state_lock:
+			if wave_time is not None:
+				self.wave_time = wave_time
+			if wave_data is not None:
+				self.wave_data = wave_data
+			if wave_int16 is not None:
+				self.wave_int16 = wave_int16
+			if note_info_list is not None:
+				self.note_info_list = note_info_list
+				self.current_note_index = -1
+			if reset_pos:
+				self.playback_pos = 0
+			self.play_start_time = None
+			self.is_playing = False
+			self.is_paused = False
+
 	def update_button_states(self):
 		"""Adjust control buttons according to current playback state."""
 		has_wave = self.wave_data is not None and self.wave_data.size > 0
-
-		if self.is_playing:
-			self.play_pause_btn.setText("Pause")
-			self.play_pause_btn.setEnabled(True)
-			self.stop_btn.setEnabled(True)
-		elif self.is_paused:
-			self.play_pause_btn.setText("Play")
-			self.play_pause_btn.setEnabled(True)
-			self.stop_btn.setEnabled(True)
-		else:
-			self.play_pause_btn.setText("Play")
-			self.play_pause_btn.setEnabled(has_wave)
-			self.stop_btn.setEnabled(False)
+		is_active = self.is_playing or self.is_paused
+		
+		self.play_pause_btn.setText("Pause" if self.is_playing else "Play")
+		self.play_pause_btn.setEnabled(has_wave if not is_active else True)
+		self.stop_btn.setEnabled(is_active)
 
 	def on_generate_clicked(self):
 		"""Generate the waveform and update the plot."""
@@ -132,7 +143,6 @@ class ToneGenerator(QWidget):
 			amp = float(self.amp_input.text())
 
 			self.sample_rate = max(int(4 * freq), 44100)
-
 			self.stop_playback()
 
 			from generator import generate_tone
@@ -141,15 +151,7 @@ class ToneGenerator(QWidget):
 			wave = np.clip(wave, -1.0, 1.0).astype(np.float32)
 			wave_int16 = np.int16(wave * 32767)
 
-			with self._state_lock:
-				self.wave_time = t
-				self.wave_data = wave
-				self.wave_int16 = wave_int16
-				self.playback_pos = 0
-				self.play_start_time = None
-				self.is_playing = False
-				self.is_paused = False
-
+			self._reset_playback_state(t, wave, wave_int16)
 			self.render_waveform(wave_type, freq)
 			self.update_button_states()
 
@@ -173,55 +175,33 @@ class ToneGenerator(QWidget):
 	def on_happy_birthday_clicked(self):
 		"""Generate and play the Happy Birthday melody."""
 		try:
-			# Stop any current playback
 			self.stop_playback()
 			self.melody_timer.stop()
 
-			# Import the Happy Birthday generator
 			from happyBdExample import generate_happy_birthday
 
-			# Get current wave type and amplitude from UI
 			wave_type = self.wave_select.currentText()
 			amp = float(self.amp_input.text())
-
-			# Use a consistent sample rate
 			self.sample_rate = 44100
 
-			# Generate the Happy Birthday melody with note information
 			t, wave, note_info_list = generate_happy_birthday(
 				sample_rate=self.sample_rate,
 				wave_type=wave_type,
 				amplitude=amp
 			)
 
-			# Convert to 16-bit PCM
 			wave = np.clip(wave, -1.0, 1.0).astype(np.float32)
 			wave_int16 = np.int16(wave * 32767)
 
-			# Store the generated waveform and note information
-			with self._state_lock:
-				self.wave_time = t
-				self.wave_data = wave
-				self.wave_int16 = wave_int16
-				self.note_info_list = note_info_list
-				self.current_note_index = -1
-				self.playback_pos = 0
-				self.play_start_time = None
-				self.is_playing = False
-				self.is_paused = False
-
+			self._reset_playback_state(t, wave, wave_int16, note_info_list)
 			self.update_button_states()
 
-			# Display the first note
 			if note_info_list:
 				self.current_note_index = 0
 				self.render_single_note(0, wave_type)
 
-			# Automatically start playback
 			self.start_playback()
-			
-			# Start timer to update display during playback
-			self.melody_timer.start(50)  # Update every 50ms
+			self.melody_timer.start(50)
 
 		except Exception as exc:
 			print("Error generating Happy Birthday melody:", exc)
@@ -234,23 +214,14 @@ class ToneGenerator(QWidget):
 			return
 		
 		note_info = self.note_info_list[note_index]
-		
-		# Extract the time and waveform data for this specific note
 		start_sample = note_info['start_sample']
 		end_sample = note_info['end_sample']
 		
-		note_time = self.wave_time[start_sample:end_sample]
-		note_wave_int16 = self.wave_int16[start_sample:end_sample]
-		
-		# Render this note
-		note_name = note_info['note']
-		freq = note_info['frequency']
-		
 		self.waveform_canvas.render_waveform(
-			note_time,
-			note_wave_int16,
-			f"Note: {note_name} ({wave_type})",
-			freq,
+			self.wave_time[start_sample:end_sample],
+			self.wave_int16[start_sample:end_sample],
+			f"Note: {note_info['note']} ({wave_type})",
+			note_info['frequency'],
 			self.sample_rate
 		)
 
@@ -259,20 +230,14 @@ class ToneGenerator(QWidget):
 		if not self.is_playing or self.note_info_list is None:
 			return
 		
-		# Calculate current playback time
-		elapsed = 0.0
-		if self.play_start_time is not None:
-			elapsed = time.monotonic() - self.play_start_time
-		
+		elapsed = time.monotonic() - self.play_start_time if self.play_start_time else 0.0
 		current_time = (self.playback_pos / self.sample_rate) + elapsed
 		
-		# Find which note should be displayed
 		for i, note_info in enumerate(self.note_info_list):
 			if note_info['start_time'] <= current_time < note_info['end_time']:
 				if i != self.current_note_index:
 					self.current_note_index = i
-					wave_type = self.wave_select.currentText()
-					self.render_single_note(i, wave_type)
+					self.render_single_note(i, self.wave_select.currentText())
 				break
 
 	def start_playback(self):
@@ -313,13 +278,8 @@ class ToneGenerator(QWidget):
 		if not self.is_playing:
 			return
 
-		# Stop melody timer if running
 		self.melody_timer.stop()
-
-		elapsed = 0.0
-		if self.play_start_time is not None:
-			elapsed = time.monotonic() - self.play_start_time
-
+		elapsed = time.monotonic() - self.play_start_time if self.play_start_time else 0.0
 		samples_played = int(elapsed * self.sample_rate)
 
 		with self._state_lock:
@@ -338,12 +298,11 @@ class ToneGenerator(QWidget):
 
 	def stop_playback(self):
 		"""Stop playback and reset to the beginning."""
-		# Stop melody timer if running
 		self.melody_timer.stop()
 		
 		with self._state_lock:
-			active_thread = self._wait_thread is not None and self._wait_thread.is_alive()
-			should_stop = self.is_playing or self.is_paused or active_thread
+			should_stop = (self.is_playing or self.is_paused or 
+			              (self._wait_thread and self._wait_thread.is_alive()))
 			if should_stop:
 				self._stop_requested = True
 
@@ -353,12 +312,7 @@ class ToneGenerator(QWidget):
 			except Exception as exc:
 				print("Error stopping playback:", exc)
 
-		with self._state_lock:
-			self.playback_pos = 0
-			self.is_playing = False
-			self.is_paused = False
-			self.play_start_time = None
-
+		self._reset_playback_state(reset_pos=True)
 		self.update_button_states()
 
 	def _start_wait_thread(self):
@@ -399,10 +353,7 @@ class ToneGenerator(QWidget):
 	def _on_playback_finished(self):
 		"""Handle playback completion triggered by the helper thread."""
 		self.melody_timer.stop()
-		self.playback_pos = 0
-		self.play_start_time = None
-		self.is_playing = False
-		self.is_paused = False
+		self._reset_playback_state(reset_pos=True)
 		self.update_button_states()
 
 	def render_waveform(self, wave_type, freq):

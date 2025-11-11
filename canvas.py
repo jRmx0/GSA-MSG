@@ -36,24 +36,19 @@ class WaveformCanvas:
 		ax = self.figure.add_subplot(111)
 		ax.plot(wave_time, wave_int16, linewidth=0.8)
 		
-		# Handle special case for melodies (freq=0 or wave_type contains "Melody")
-		if freq == 0 or "Melody" in wave_type or "Birthday" in wave_type:
-			ax.set_title(
-				f"{wave_type} ({sample_rate/1000:.1f} kHz, 16-bit)"
-			)
-		else:
-			ax.set_title(
-				f"{wave_type.capitalize()} Wave – {freq} Hz ({sample_rate/1000:.1f} kHz, 16-bit)"
-			)
+		# Display frequency in title only if it's a regular tone (not a melody)
+		title = f"{wave_type} ({sample_rate/1000:.1f} kHz, 16-bit)"
+		if freq > 0 and not any(keyword in wave_type for keyword in ["Melody", "Birthday", "Note"]):
+			title = f"{wave_type.capitalize()} Wave – {freq} Hz ({sample_rate/1000:.1f} kHz, 16-bit)"
 		
+		ax.set_title(title)
 		ax.set_xlabel("Time (s)")
 		ax.set_ylabel("Amplitude (16-bit integer)")
 		ax.grid(True)
 		
 		ax.yaxis.set_major_formatter(FormatStrFormatter('%d'))
-		max_val = np.max(np.abs(wave_int16)) if wave_int16.size else 0
-		if max_val == 0:
-			max_val = 32767
+		max_val = np.max(np.abs(wave_int16)) if wave_int16.size else 32767
+		max_val = max_val if max_val > 0 else 32767
 		ax.set_ylim(-max_val * 1.1, max_val * 1.1)
 		
 		if wave_time.size > 0:
