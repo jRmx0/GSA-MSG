@@ -121,7 +121,7 @@ class ToneGenerator(QWidget):
 			duration = float(self.duration_input.text())
 			amp = float(self.amp_input.text())
 
-			self.sample_rate = max(int(4 * freq), 41000)
+			self.sample_rate = max(int(4 * freq), 44100)
 
 			self.stop_playback()
 
